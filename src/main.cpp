@@ -34,6 +34,7 @@
 #define MAIN_CPP_
 
 #include <memory>
+#include <list>
 using namespace std;
 
 #include "main.h"
@@ -71,11 +72,14 @@ int main(int argc, char *argv[])
 	cout << "Building kernels." << endl;
 	liboi.Init();
 
-    unsigned int n_children = 20;
+    unsigned int n_children = 50;
 	// Init the array values randomly:
 	std::random_device rd;
 	std::mt19937 e2(rd());
-	std::uniform_int_distribution<> dist(0, n_children);
+	std::uniform_int_distribution<> population_random_dist(0, n_children);
+
+	double breeding_sigma = n_children / 5.0;
+	std::normal_distribution<double> breeding_normal_dist(0, breeding_sigma);
 
     // Init the population
     vector<CIndividualPtr> population;
@@ -86,6 +90,7 @@ int main(int argc, char *argv[])
     	population.push_back(temp);
     }
 
+    float * image;
     for(unsigned int n_iterations = 0; n_iterations < 100; n_iterations++)
     {
 		cout << "Computing chi2r for population." << endl;
@@ -95,7 +100,7 @@ int main(int argc, char *argv[])
 			individual->chi2r = 0;
 
 			// set the image
-			float * image = &(individual->image[0]);
+			image = &(individual->image[0]);
 			liboi.SetImageSource(image);
 			liboi.CopyImageToBuffer(0);
 
@@ -106,22 +111,33 @@ int main(int argc, char *argv[])
 		// Sort The population in ascending order. Most fit individuals have the lowest
 		// chi2r values.
 		std::sort(population.begin(), population.end(), best_fit_individuals);
-		cout << "Best individual: " << population.front()->chi2r << endl;
-		cout << "Worst individual: " << population.back()->chi2r << endl;
+		cout << "Best: " << population.front()->chi2r << " " << population.front() << " ";
+		cout << "Worst: " << population.back()->chi2r << endl;
 
-		// Now breed the individuals
+		float * image = &(population.front()->image[0]);
+		liboi.SetImageSource(image);
+		liboi.CopyImageToBuffer(0);
+		liboi.ExportImage("!/tmp/best_individual.fits");
+
+		// Breed new children
+		unsigned int keep = 5;
+		unsigned int individual_a;
+		unsigned int individual_b;
 		for(unsigned int i = 0; i < n_children; i++)
 		{
-			CIndividualPtr A = population[dist(e2) / 2];
-			CIndividualPtr B = population[dist(e2) / 2];
+			individual_a = int(floor(abs(breeding_normal_dist(e2))));	// better individuals breed more often
+			individual_b = population_random_dist(e2);	// anyone in the population
+
+			CIndividualPtr A = population[individual_a];
+			CIndividualPtr B = population[individual_b];
 
 			CIndividualPtr C = CIndividual::Breed(A,B);
 			CIndividual::Mutate(C);
 			population.push_back(C);
 		}
 
-		// remove parents from the population
-		population.erase(population.begin(), population.begin() + n_children);
+		// Erase all but the best individuals and the newly generated children.
+		population.erase(population.begin() + keep, population.begin() + n_children +  keep);
     }
 
 }
